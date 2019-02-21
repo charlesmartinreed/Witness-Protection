@@ -206,6 +206,12 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         self.setupVisionDrawingLayers()
     }
     
+    //MARK:- EXIF and device orientation handling
+    fileprivate func radiansForDegrees(_ degrees: CGFloat) -> CGFloat {
+        return CGFloat(Double(degrees) * Double.pi / 180.0)
+    }
+
+    
     //MARK: drawing our layers, post observation
     fileprivate func setupVisionDrawingLayers() {
         let captureDeviceResolution = self.captureDeviceResolution
@@ -260,9 +266,118 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
     
     fileprivate func updateLayerGeometry() {
+        guard let overlayLayer = self.detectionOverlayLayer,
+            let rootLayer = self.rootLayer,
+            let previewLayer = self.previewLayer else { return }
         
+        CATransaction.setValue(NSNumber(value: true), forKey: kCATransactionDisableActions) //supresses IMPLICIT actions on the layer tree
+        
+        let videoPreviewRect = previewLayer.layerRectConverted(fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
+        
+        var rotation: CGFloat
+        var scaleX: CGFloat
+        var scaleY: CGFloat
+        
+        switch UIDevice.current.orientation {
+        case .portraitUpsideDown:
+            rotation = 180
+            scaleX = videoPreviewRect.height / captureDeviceResolution.width
+            scaleY = videoPreviewRect.width / captureDeviceResolution.height
+            
+        case .landscapeLeft:
+            rotation = 90
+            scaleX = videoPreviewRect.height / captureDeviceResolution.width
+            scaleY = scaleX
+            
+        case .landscapeRight:
+            rotation = -90
+            scaleX = videoPreviewRect.height / captureDeviceResolution.width
+            scaleY = scaleX
+            
+        default:
+            rotation = 0
+            scaleX = videoPreviewRect.width / captureDeviceResolution.width
+            scaleY = videoPreviewRect.height / captureDeviceResolution.height
+        }
+        
+        //scale and mirror image to place it upright
+        let affineTransform = CGAffineTransform(rotationAngle: radiansForDegrees(rotation)).scaledBy(x: scaleX, y: -scaleY)
+        overlayLayer.setAffineTransform(affineTransform)
+        
+        let rootLayerBounds = rootLayer.bounds
+        overlayLayer.position = CGPoint(x: rootLayerBounds.midX, y: rootLayerBounds.midY)
     }
     
+    fileprivate func addPoints(in landmarkRegion: VNFaceLandmarkRegion2D, to path: CGMutablePath, applying affineTransform: CGAffineTransform, closingWhenComplete closePath: Bool) {
+        let pointCount = landmarkRegion.pointCount
+        if pointCount > 1 {
+            let points: [CGPoint] = landmarkRegion.normalizedPoints
+            path.move(to: points[0], transform: affineTransform)
+            path.addLines(between: points, transform: affineTransform)
+            
+            if closePath {
+                path.addLine(to: points[0], transform: affineTransform)
+                path.closeSubpath()
+            }
+        }
+    }
+    
+    fileprivate func addIndicators(to faceRectanglePath: CGMutablePath, faceLandmarkPath: CGMutablePath, for faceObservation: VNFaceObservation) {
+        let displaySize = self.captureDeviceResolution
+        
+        let faceBounds = VNImageRectForNormalizedRect(faceObservation.boundingBox, Int(displaySize.width), Int(displaySize.height))
+        faceRectanglePath.addRect(faceBounds)
+        
+        if let landmarks = faceObservation.landmarks {
+            let affineTransform = CGAffineTransform(translationX: faceBounds.origin.x, y: faceBounds.origin.y).scaledBy(x: faceBounds.size.width, y: faceBounds.size.height)
+            
+            let openLandmarkRegions: [VNFaceLandmarkRegion2D?] = [
+                landmarks.leftEyebrow,
+                landmarks.rightEyebrow,
+                landmarks.faceContour,
+                landmarks.noseCrest,
+                landmarks.medianLine
+            ]
+            
+            for openLandmarkRegion in openLandmarkRegions where openLandmarkRegion != nil {
+                self.addPoints(in: openLandmarkRegion!, to: faceLandmarkPath, applying: affineTransform, closingWhenComplete: false)
+            }
+            
+            let closedLandmarkRegions: [VNFaceLandmarkRegion2D?] = [
+                landmarks.leftEye,
+                landmarks.rightEye,
+                landmarks.outerLips,
+                landmarks.innerLips,
+                landmarks.nose,
+            ]
+            
+            for closedLandmarkRegion in closedLandmarkRegions where closedLandmarkRegion != nil {
+                self.addPoints(in: closedLandmarkRegion!, to: faceLandmarkPath, applying: affineTransform, closingWhenComplete: true)
+            }
+        }
+    }
+    
+    //MARK: draw the paths for our landmarks
+    fileprivate func drawFaceObservations(_ faceObservations: [VNFaceObservation]) {
+        guard let faceRectangleShapeLayer = self.detectedFaceRectangleShapeLayer,
+            let faceLandmarksShapeLayer = self.detectedFaceLandmarksShapeLayer else { return }
+        
+        CATransaction.begin()
+        CATransaction.setValue(NSNumber(value: true), forKey: kCATransactionDisableActions)
+        
+        let faceRectanglePath = CGMutablePath()
+        let faceLandmarksPath = CGMutablePath()
+        
+        for faceObservation in faceObservations {
+            self.addIndicators(to: faceRectanglePath, faceLandmarkPath: faceLandmarksPath, for: faceObservation)
+        }
+        
+        faceRectangleShapeLayer.path = faceRectanglePath
+        faceLandmarksShapeLayer.path = faceLandmarksPath
+        
+        self.updateLayerGeometry()
+        CATransaction.commit()
+    }
     
 
 }
