@@ -12,9 +12,9 @@ import Vision
 
 class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
     
-    @IBOutlet weak var videoPreviewView: UIView?
+    @IBOutlet weak var videoPreviewView: UIView!
     
-    //MARK:- UI elements
+    //MARK:- UI properties
     lazy var startTrackingButton: UIButton = {
         let button = UIButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -23,16 +23,39 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         return button
     }()
 
+    //MARK:- Vision properties
+    private let visionSequenceHandler = VNSequenceRequestHandler()
+    private lazy var previewLayer: AVCaptureVideoPreviewLayer = AVCaptureVideoPreviewLayer(session: self.captureSession)
+    private lazy var captureSession: AVCaptureSession = {
+        let session = AVCaptureSession()
+        session.sessionPreset = AVCaptureSession.Preset.photo
+        guard let frontCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
+            let input = try? AVCaptureDeviceInput(device: frontCamera) else { return session }
+        session.addInput(input)
+        return session
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        self.videoPreviewView?.layer.addSublayer(self.previewLayer)
         
         setupUI()
+        setupVideoOutput() //sets up the output and starts the capture session
   
+    }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        
+        let bounds: CGRect = videoPreviewView.layer.bounds
+        previewLayer.videoGravity = .resizeAspectFill
+        previewLayer.bounds = bounds
+        previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
     }
     
     fileprivate func setupUI() {
         view.addSubview(startTrackingButton)
+        
         
         let buttonConstraints: [NSLayoutConstraint] = [
             startTrackingButton.widthAnchor.constraint(equalToConstant: 150),
@@ -43,7 +66,16 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         NSLayoutConstraint.activate(buttonConstraints)
     }
+    
+    fileprivate func setupVideoOutput() {
+        let videoOutput = AVCaptureVideoDataOutput()
+        videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "witness-queue"))
+        self.captureSession.addOutput(videoOutput)
+
+        self.captureSession.startRunning()
+    }
    
+    private var lastObservatin: VNDetectedObjectObservation?
     
 
 }
