@@ -175,6 +175,95 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     fileprivate func presentError(_ error: NSError) {
         self.presentErrorAlert(withTitle: "Failed with error \(error.code)", message: error.localizedDescription)
     }
+    
+    //MARK:- Handling/performing vision requests
+    fileprivate func prepareVisionRequest() {
+        
+        //self.trackingRequests = []
+        var requests = [VNTrackObjectRequest]()
+        
+        let faceDetectionRequest = VNDetectFaceRectanglesRequest { (req, err) in
+            if err != nil {
+                print("FaceDetection error: \(String(describing: err)).")
+            }
+            
+            guard let faceDetectionRequest = req as? VNDetectFaceRectanglesRequest,
+                let results = faceDetectionRequest.results as? [VNFaceObservation] else {
+                    return
+            }
+            DispatchQueue.main.async {
+                for observation in results {
+                    let faceTrackingRequest = VNTrackObjectRequest(detectedObjectObservation: observation)
+                    requests.append(faceTrackingRequest)
+                }
+                self.trackingRequests = requests
+            }
+        }
+        
+        //DETECTION STARTS HERE. FIND A FACE, THE TRACK IT.
+        self.detectionRequests = [faceDetectionRequest]
+        self.sequenceRequestHandler = VNSequenceRequestHandler() //processes image analysis for each frame
+        self.setupVisionDrawingLayers()
+    }
+    
+    //MARK: drawing our layers, post observation
+    fileprivate func setupVisionDrawingLayers() {
+        let captureDeviceResolution = self.captureDeviceResolution
+        let captureDeviceBounds = CGRect(x: 0, y: 0, width: captureDeviceResolution.width, height: captureDeviceResolution.height)
+        let captureDeviceBoundsCenterPoint = CGPoint(x: captureDeviceBounds.midX, y: captureDeviceBounds.midY)
+        let normalizedCenterPoint = CGPoint(x: 0.5, y: 0.5)
+        
+        guard let rootLayer = self.rootLayer else {
+            self.presentErrorAlert(message: "View was not property intialized")
+            return
+        }
+        
+        let overlayLayer = CALayer()
+        overlayLayer.name = "DetectionOverlay"
+        overlayLayer.masksToBounds = true
+        overlayLayer.anchorPoint = normalizedCenterPoint
+        overlayLayer.bounds = captureDeviceBounds
+        overlayLayer.position = CGPoint(x: rootLayer.bounds.midX, y: rootLayer.bounds.midY)
+        
+        let faceRectangleShapeLayer = CAShapeLayer()
+        faceRectangleShapeLayer.name = "RectangleOutlineLayer"
+        faceRectangleShapeLayer.bounds = captureDeviceBounds
+        faceRectangleShapeLayer.anchorPoint = normalizedCenterPoint
+        faceRectangleShapeLayer.position = captureDeviceBoundsCenterPoint
+        faceRectangleShapeLayer.fillColor = nil
+        faceRectangleShapeLayer.strokeColor = UIColor.green.withAlphaComponent(0.7).cgColor
+        faceRectangleShapeLayer.lineWidth = 5
+        faceRectangleShapeLayer.shadowOpacity = 0.7
+        faceRectangleShapeLayer.shadowRadius = 5
+        
+        let faceLandmarksShapeLayer = CAShapeLayer()
+        faceLandmarksShapeLayer.name = "FaceLandmarksLayer"
+        faceLandmarksShapeLayer.bounds = captureDeviceBounds
+        faceLandmarksShapeLayer.anchorPoint = normalizedCenterPoint
+        faceLandmarksShapeLayer.position = captureDeviceBoundsCenterPoint
+        faceLandmarksShapeLayer.fillColor = nil
+        faceLandmarksShapeLayer.strokeColor = UIColor.yellow.withAlphaComponent(0.7).cgColor
+        faceLandmarksShapeLayer.lineWidth = 3
+        faceLandmarksShapeLayer.shadowOpacity = 0.7
+        faceLandmarksShapeLayer.shadowRadius = 5
+        
+        overlayLayer.addSublayer(faceRectangleShapeLayer)
+        faceRectangleShapeLayer.addSublayer(faceLandmarksShapeLayer)
+        rootLayer.addSublayer(overlayLayer)
+        
+        self.detectionOverlayLayer = overlayLayer
+        self.detectedFaceRectangleShapeLayer = faceRectangleShapeLayer
+        self.detectedFaceLandmarksShapeLayer = faceLandmarksShapeLayer
+        
+        self.updateLayerGeometry()
+        
+    }
+    
+    fileprivate func updateLayerGeometry() {
+        
+    }
+    
+    
 
 }
 
