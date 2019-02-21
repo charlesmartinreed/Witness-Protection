@@ -24,7 +24,12 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }()
 
     //MARK:- Vision properties
+    //because we're streaming video into the vision system, we need a persistent request handler object for the project
     private let visionSequenceHandler = VNSequenceRequestHandler()
+    
+    //we also need a property to store the observational seed for Vision, which is called renewed with each frame thanks to AVCaptureSession
+    private var lastObservation: VNDetectedObjectObservation?
+    
     private lazy var previewLayer: AVCaptureVideoPreviewLayer = AVCaptureVideoPreviewLayer(session: self.captureSession)
     private lazy var captureSession: AVCaptureSession = {
         let session = AVCaptureSession()
@@ -74,9 +79,26 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
         self.captureSession.startRunning()
     }
-   
-    private var lastObservatin: VNDetectedObjectObservation?
     
+    //MARK:- sample buffer delegte methods
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        //get the CVPixelBuffer from CMSampleBuffer
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer), let lastObservation = self.lastObservation else { return }
+        //make sure observations are saved in class property
+        
+        //create and configure a VNTrackObjectRequest - completion is written below
+        let request = VNTrackObjectRequest(detectedObjectObservation: lastObservation, completionHandler: nil)
+        
+        //favor accuracy over speed
+        request.trackingLevel = .accurate
+        
+        //ask the VNSequenceRequestHandler to perform a request
+        do {
+            try self.visionSequenceHandler.perform([request], on: pixelBuffer)
+        } catch let error as NSError {
+            NSLog("Error detecting object: %@", error)
+        }
+    }
 
 }
 
