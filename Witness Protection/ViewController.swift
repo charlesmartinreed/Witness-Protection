@@ -16,7 +16,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     @IBOutlet weak var videoPreviewView: UIView!
     
     //MARK:- UI properties
-    lazy var startTrackingButton: UIButton = {
+    lazy var trackingButton: UIButton = {
         let button = UIButton()
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setImage(#imageLiteral(resourceName: "Image"), for: .normal)
@@ -25,8 +25,17 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         return button
     }()
     
+    lazy var recordButton: UIButton = {
+        let button = UIButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.backgroundColor = .green
+        button.layer.cornerRadius = 25
+        
+        button.addTarget(self, action: #selector(recordButtonTapped), for: .touchUpInside)
+        return button
+    }()
+    
     let shapeLayer = CAShapeLayer()
-    private var maskLayer = [CAShapeLayer]()
     
     //MARK:- Vision properties
     let faceDetection = VNDetectFaceRectanglesRequest()
@@ -37,6 +46,15 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
     //MARK:- AVKit properties
     var session: AVCaptureSession?
+    var userIsRecording: Bool = false {
+        didSet {
+            if userIsRecording {
+                recordButton.backgroundColor = .red
+            } else {
+                recordButton.backgroundColor = .green
+            }
+        }
+    }
     
     private lazy var previewLayer: AVCaptureVideoPreviewLayer? = {
         guard let session = self.session else { return nil }
@@ -86,19 +104,68 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
     
     fileprivate func setupUI() {
-        view.addSubview(startTrackingButton)
+        view.addSubview(trackingButton)
+        view.addSubview(recordButton)
         
-        let buttonConstraints: [NSLayoutConstraint] = [
-            startTrackingButton.widthAnchor.constraint(equalToConstant: 150),
-            startTrackingButton.heightAnchor.constraint(equalToConstant: 150),
-            startTrackingButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            startTrackingButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 16)
+        let trackingButtonConstraints: [NSLayoutConstraint] = [
+            trackingButton.widthAnchor.constraint(equalToConstant: 150),
+            trackingButton.heightAnchor.constraint(equalToConstant: 150),
+            trackingButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            trackingButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 16)
         ]
         
-        NSLayoutConstraint.activate(buttonConstraints)
+        let recordButtonConstriants: [NSLayoutConstraint] = [
+            recordButton.widthAnchor.constraint(equalToConstant: 50),
+            recordButton.heightAnchor.constraint(equalToConstant: 50),
+            recordButton.topAnchor.constraint(equalTo: videoPreviewView.safeAreaLayoutGuide.topAnchor, constant: 16),
+            recordButton.trailingAnchor.constraint(equalTo: videoPreviewView.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ]
+        
+        NSLayoutConstraint.activate(trackingButtonConstraints)
+        NSLayoutConstraint.activate(recordButtonConstriants)
         
     }
     
+    //MARK:- Record button methods
+    @objc fileprivate func recordButtonTapped() {
+        animateRecordButton()
+        
+        if !userIsRecording {
+            beginVideoRecording()
+        } else {
+            finishVideoRecording()
+        }
+        
+        
+    }
+    
+    fileprivate func animateRecordButton() {
+        let anim = CABasicAnimation(keyPath: "backgroundColor")
+        
+        if !userIsRecording {
+            anim.fromValue = UIColor.green.cgColor
+            anim.toValue = UIColor.red.cgColor
+        } else {
+            anim.fromValue = UIColor.red.cgColor
+            anim.toValue = UIColor.green.cgColor
+        }
+        
+        anim.duration = 0.5
+        recordButton.layer.add(anim, forKey: "backgroundColor")
+        
+        userIsRecording.toggle()
+    }
+    
+    //MARK:- Recording video
+    fileprivate func beginVideoRecording() {
+        
+    }
+    
+    fileprivate func finishVideoRecording() {
+        
+    }
+    
+    //MARK:- Add input/output devices to capture session
     fileprivate func prepareSession() {
         session = AVCaptureSession()
         guard let session = session, let captureDevice = frontCamera else { return }
@@ -127,12 +194,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         }
         
     }
-    
-    fileprivate func setupBlurRect() {
-     
-    }
-    
-  
+
     
     //MARK:- sample buffer delegte methods
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -164,7 +226,6 @@ extension ViewController {
             }
         }
     }
-    
     
     func detectLandmarks(on image: CIImage) {
         try? faceLandmarksDetectionRequest.perform([faceLandmarks], on: image)
@@ -247,52 +308,7 @@ extension ViewController {
         
         shapeLayer.addSublayer(newLayer)
         
-        
-        //can I change the background color?
     }
-    
-//    func placeImageAt(points: [(x: CGFloat, y: CGFloat)]) {
-//        let imageView = UIImageView()
-//
-//        for point in points {
-//            imageView.frame = CGRect(x: point.x, y: point.y, width: 50, height: 50)
-//            imageView.image = #imageLiteral(resourceName: "Image")
-//            imageView.contentMode = .scaleAspectFit
-//        }
-//
-//        videoPreviewView.addSubview(imageView)
-//    }
-//
-//    fileprivate func drawFaceboundingBox(face: VNFaceObservation) {
-//        /* The coordinates are normalized to the dimensions of the processed image,
-//        with the origin at the image's lower-left corner.*/
-//
-//        let transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -videoPreviewView.frame.height)
-//        let scale = CGAffineTransform.identity.scaledBy(x: videoPreviewView.frame.width, y: videoPreviewView.frame.height)
-//        let faceBounds = face.boundingBox.applying(scale).applying(transform)
-//
-//        //now, create the layer
-//        _ = createImage(in: faceBounds)
-//    }
-//
-//    fileprivate func createImage(in rect: CGRect) -> UIImageView {
-//        disguiseImageView = UIImageView()
-//        disguiseImageView.frame = rect
-//        disguiseImageView.image = #imageLiteral(resourceName: "Image")
-//        disguiseImageView.contentMode = .scaleAspectFit
-//        videoPreviewView.addSubview(disguiseImageView)
-//
-//        //mask.cornerRadius = 10
-//        //mask.opacity = 0.75
-//        //mask.borderColor = UIColor.yellow.cgColor
-//        //mask.borderWidth = 2.0
-//
-//        //maskLayer.append(mask)
-//        //previewLayer?.insertSublayer(mask, at: 1)
-//
-//        return disguiseImageView
-//    }
-    
     
     func convert(_ points: [CGPoint], with count: Int) -> [(x: CGFloat, y: CGFloat)] {
         var convertedPoints = [(x: CGFloat, y: CGFloat)]()
