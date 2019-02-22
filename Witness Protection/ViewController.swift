@@ -24,12 +24,16 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         return button
     }()
     let shapeLayer = CAShapeLayer()
+    var disguiseImageView = UIImageView()
+    
+    private var maskLayer = [CAShapeLayer]()
     
     //MARK:- Vision properties
     let faceDetection = VNDetectFaceRectanglesRequest()
     let faceLandmarks = VNDetectFaceLandmarksRequest()
     let faceLandmarksDetectionRequest = VNSequenceRequestHandler()
     let faceDetectionSequenceRequest = VNSequenceRequestHandler()
+    var boundingBoxExists = false
 
     //MARK:- AVKit properties
     var session: AVCaptureSession?
@@ -153,6 +157,7 @@ extension ViewController {
                 
                 DispatchQueue.main.async {
                     self.shapeLayer.sublayers?.removeAll()
+                    
                 }
             }
         }
@@ -170,31 +175,33 @@ extension ViewController {
                         
                         let faceContour = observation.landmarks?.faceContour
                         self.convertPointsForFace(faceContour, faceBoundingBox)
-                        
+
                         let leftEye = observation.landmarks?.leftEye
                         self.convertPointsForFace(leftEye, faceBoundingBox)
-                        
+
                         let rightEye = observation.landmarks?.rightEye
                         self.convertPointsForFace(rightEye, faceBoundingBox)
-                        
+
                         let nose = observation.landmarks?.nose
                         self.convertPointsForFace(nose, faceBoundingBox)
-                        
+
                         let lips = observation.landmarks?.innerLips
                         self.convertPointsForFace(lips, faceBoundingBox)
-                        
+
                         let leftEyebrow = observation.landmarks?.leftEyebrow
                         self.convertPointsForFace(leftEyebrow, faceBoundingBox)
-                        
+
                         let rightEyebrow = observation.landmarks?.rightEyebrow
                         self.convertPointsForFace(rightEyebrow, faceBoundingBox)
-                        
+
                         let noseCrest = observation.landmarks?.noseCrest
                         self.convertPointsForFace(noseCrest, faceBoundingBox)
-                        
+
                         let outerLips = observation.landmarks?.outerLips
                         self.convertPointsForFace(outerLips, faceBoundingBox)
+                        
                     }
+                    
                 }
             }
         }
@@ -212,6 +219,7 @@ extension ViewController {
             }
             
             DispatchQueue.main.async {
+
                 self.draw(points: faceLandmarkPoints)
             }
             
@@ -229,12 +237,57 @@ extension ViewController {
             let point = CGPoint(x: points[i].x, y: points[i].y)
             path.addLine(to: point)
             path.move(to: point)
+            
         }
+        
         path.addLine(to: CGPoint(x: points[0].x, y: points[0].y))
         newLayer.path = path.cgPath
         
         shapeLayer.addSublayer(newLayer)
     }
+    
+    func placeImageAt(points: [(x: CGFloat, y: CGFloat)]) {
+        let imageView = UIImageView()
+        
+        for point in points {
+            imageView.frame = CGRect(x: point.x, y: point.y, width: 50, height: 50)
+            imageView.image = #imageLiteral(resourceName: "Image")
+            imageView.contentMode = .scaleAspectFit
+        }
+    
+        videoPreviewView.addSubview(imageView)
+    }
+    
+    fileprivate func drawFaceboundingBox(face: VNFaceObservation) {
+        /* The coordinates are normalized to the dimensions of the processed image,
+        with the origin at the image's lower-left corner.*/
+        
+        let transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -videoPreviewView.frame.height)
+        let scale = CGAffineTransform.identity.scaledBy(x: videoPreviewView.frame.width, y: videoPreviewView.frame.height)
+        let faceBounds = face.boundingBox.applying(scale).applying(transform)
+        
+        //now, create the layer
+        _ = createImage(in: faceBounds)
+    }
+    
+    fileprivate func createImage(in rect: CGRect) -> UIImageView {
+        disguiseImageView = UIImageView()
+        disguiseImageView.frame = rect
+        disguiseImageView.image = #imageLiteral(resourceName: "Image")
+        disguiseImageView.contentMode = .scaleAspectFit
+        videoPreviewView.addSubview(disguiseImageView)
+        
+        //mask.cornerRadius = 10
+        //mask.opacity = 0.75
+        //mask.borderColor = UIColor.yellow.cgColor
+        //mask.borderWidth = 2.0
+        
+        //maskLayer.append(mask)
+        //previewLayer?.insertSublayer(mask, at: 1)
+        
+        return disguiseImageView
+    }
+    
     
     func convert(_ points: [CGPoint], with count: Int) -> [(x: CGFloat, y: CGFloat)] {
         var convertedPoints = [(x: CGFloat, y: CGFloat)]()
@@ -243,6 +296,13 @@ extension ViewController {
         }
         
         return convertedPoints
+    }
+    
+    private func faceFrame(from boundingBox: CGRect) -> CGRect {
+        let origin = CGPoint(x: boundingBox.minX * videoPreviewView.bounds.width, y: (1 - boundingBox.maxY) * videoPreviewView.bounds.height)
+        let size = CGSize(width: boundingBox.width * videoPreviewView.bounds.width, height: boundingBox.height * videoPreviewView.bounds.height)
+        
+        return CGRect(origin: origin, size: size)
     }
     
 }
