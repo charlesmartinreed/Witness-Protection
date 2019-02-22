@@ -22,45 +22,64 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         return button
     }()
-
+    let shapeLayer = CAShapeLayer()
+    
     //MARK:- Vision properties
-    //because we're streaming video into the vision system, we need a persistent request handler object for the project
-    private let visionSequenceHandler = VNSequenceRequestHandler()
-    
-    //we also need a property to store the observational seed for Vision, which is called renewed with each frame thanks to AVCaptureSession
-    private var lastObservation: VNDetectedObjectObservation?
-    
-    private lazy var previewLayer: AVCaptureVideoPreviewLayer = AVCaptureVideoPreviewLayer(session: self.captureSession)
-    private lazy var captureSession: AVCaptureSession = {
-        let session = AVCaptureSession()
-        session.sessionPreset = AVCaptureSession.Preset.photo
-        guard let frontCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
-            let input = try? AVCaptureDeviceInput(device: frontCamera) else { return session }
-        session.addInput(input)
-        return session
-    }()
+    let faceDetection = VNDetectFaceRectanglesRequest()
+    let faceLandmarks = VNDetectFaceLandmarksRequest()
+    let faceLandmarksDetectionRequest = VNSequenceRequestHandler()
+    let faceDetectionSequenceRequest = VNSequenceRequestHandler()
 
+    //MARK:- AVKit properties
+    var session: AVCaptureSession?
+    
+    private lazy var previewLayer: AVCaptureVideoPreviewLayer? = {
+        guard let session = self.session else { return nil }
+        
+        var previewLayer = AVCaptureVideoPreviewLayer(session: session)
+        previewLayer.videoGravity = .resizeAspectFill
+        
+        return previewLayer
+    }()
+    
+    var frontCamera: AVCaptureDevice? = {
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.videoPreviewView?.layer.addSublayer(self.previewLayer)
         
         setupUI()
-        setupVideoOutput() //sets up the output and starts the capture session
+        prepareSession()
+        session?.startRunning()
   
     }
     
     override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
         
-        let bounds: CGRect = videoPreviewView.layer.bounds
-        previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.bounds = bounds
-        previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = videoPreviewView.frame
+        shapeLayer.frame = videoPreviewView.frame
+        
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard let previewLayer = previewLayer else { return }
+        
+        videoPreviewView.layer.addSublayer(previewLayer)
+        
+        shapeLayer.strokeColor = UIColor.red.cgColor
+        shapeLayer.lineWidth = 2.0
+        
+        //coord system is flipped for Vision
+        shapeLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: -1))
+        
+        videoPreviewView.layer.addSublayer(shapeLayer)
     }
     
     fileprivate func setupUI() {
         view.addSubview(startTrackingButton)
-        
         
         let buttonConstraints: [NSLayoutConstraint] = [
             startTrackingButton.widthAnchor.constraint(equalToConstant: 150),
@@ -70,35 +89,62 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         ]
         
         NSLayoutConstraint.activate(buttonConstraints)
+        
     }
     
-    fileprivate func setupVideoOutput() {
-        let videoOutput = AVCaptureVideoDataOutput()
-        videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "witness-queue"))
-        self.captureSession.addOutput(videoOutput)
-
-        self.captureSession.startRunning()
+    fileprivate func prepareSession() {
+        session = AVCaptureSession()
+        guard let session = session, let captureDevice = frontCamera else { return }
+        
+        do {
+            let deviceInput = try AVCaptureDeviceInput(device: captureDevice)
+            session.beginConfiguration()
+            
+            if session.canAddInput(deviceInput) {
+                session.addInput(deviceInput)
+            }
+            
+            let output = AVCaptureVideoDataOutput()
+            output.videoSettings = [String(kCVPixelBufferPixelFormatTypeKey) : Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)]
+            output.alwaysDiscardsLateVideoFrames = true
+            
+            if session.canAddOutput(output) {
+                session.addOutput(output)
+            }
+            
+            session.commitConfiguration()
+            let queue = DispatchQueue(label: "witness-output")
+            output.setSampleBufferDelegate(self, queue: queue)
+        } catch let error as NSError {
+            NSLog("Could not prepare session: %@", error)
+        }
+        
     }
+    
+    fileprivate func setupBlurRect() {
+     
+    }
+    
+  
     
     //MARK:- sample buffer delegte methods
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        //get the CVPixelBuffer from CMSampleBuffer
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer), let lastObservation = self.lastObservation else { return }
-        //make sure observations are saved in class property
         
-        //create and configure a VNTrackObjectRequest - completion is written below
-        let request = VNTrackObjectRequest(detectedObjectObservation: lastObservation, completionHandler: nil)
+        let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+        let attachments = CMCopyDictionaryOfAttachments(allocator: kCFAllocatorDefault, target: sampleBuffer, attachmentMode: kCMAttachmentMode_ShouldPropagate)
+        let ciImage = CIImage(cvImageBuffer: pixelBuffer!, options: attachments as! [CIImageOption : Any]?)
         
-        //favor accuracy over speed
-        request.trackingLevel = .accurate
-        
-        //ask the VNSequenceRequestHandler to perform a request
-        do {
-            try self.visionSequenceHandler.perform([request], on: pixelBuffer)
-        } catch let error as NSError {
-            NSLog("Error detecting object: %@", error)
-        }
+        //leftMirrored for front cam
+        let ciImageWithOrientation = ciImage.oriented(forExifOrientation: Int32(UIImage.Orientation.leftMirrored.rawValue))
+        detectFace(on: ciImageWithOrientation)
+       
     }
 
+}
+
+extension ViewController {
+    func detectFace(on image: CIImage) {
+        
+    }
 }
 
