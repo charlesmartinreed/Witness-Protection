@@ -6,6 +6,7 @@
 //  Copyright © 2019 Charles Martin Reed. All rights reserved.
 //
 
+import Foundation
 import UIKit
 import AVKit
 import Vision
@@ -144,7 +145,112 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
 extension ViewController {
     func detectFace(on image: CIImage) {
+        try? faceDetectionSequenceRequest.perform([faceDetection], on: image)
+        if let results = faceDetection.results as? [VNFaceObservation] {
+            if !results.isEmpty {
+                faceLandmarks.inputFaceObservations = results
+                detectLandmarks(on: image)
+                
+                DispatchQueue.main.async {
+                    self.shapeLayer.sublayers?.removeAll()
+                }
+            }
+        }
+    }
+    
+    
+    func detectLandmarks(on image: CIImage) {
+        try? faceLandmarksDetectionRequest.perform([faceLandmarks], on: image)
+        if let landmarkResults = faceLandmarks.results as? [VNFaceObservation] {
+            for observation in landmarkResults {
+                DispatchQueue.main.async {
+                    //the face itself
+                    if let boundingBox = self.faceLandmarks.inputFaceObservations?.first?.boundingBox {
+                        let faceBoundingBox = boundingBox.scaled(to: self.view.bounds.size)
+                        
+                        let faceContour = observation.landmarks?.faceContour
+                        self.convertPointsForFace(faceContour, faceBoundingBox)
+                        
+                        let leftEye = observation.landmarks?.leftEye
+                        self.convertPointsForFace(leftEye, faceBoundingBox)
+                        
+                        let rightEye = observation.landmarks?.rightEye
+                        self.convertPointsForFace(rightEye, faceBoundingBox)
+                        
+                        let nose = observation.landmarks?.nose
+                        self.convertPointsForFace(nose, faceBoundingBox)
+                        
+                        let lips = observation.landmarks?.innerLips
+                        self.convertPointsForFace(lips, faceBoundingBox)
+                        
+                        let leftEyebrow = observation.landmarks?.leftEyebrow
+                        self.convertPointsForFace(leftEyebrow, faceBoundingBox)
+                        
+                        let rightEyebrow = observation.landmarks?.rightEyebrow
+                        self.convertPointsForFace(rightEyebrow, faceBoundingBox)
+                        
+                        let noseCrest = observation.landmarks?.noseCrest
+                        self.convertPointsForFace(noseCrest, faceBoundingBox)
+                        
+                        let outerLips = observation.landmarks?.outerLips
+                        self.convertPointsForFace(outerLips, faceBoundingBox)
+                    }
+                }
+            }
+        }
+    }
+    
+    func convertPointsForFace(_ landmark: VNFaceLandmarkRegion2D?, _ boundingBox: CGRect) {
+        if let points = landmark?.normalizedPoints, let count = landmark?.pointCount {
+            let convertedPoints = convert(points, with: count)
+            
+            let faceLandmarkPoints = convertedPoints.map { (point: (x: CGFloat, y: CGFloat)) -> (x: CGFloat, y: CGFloat) in
+                let pointX = point.x * boundingBox.width + boundingBox.origin.x
+                let pointY = point.y * boundingBox.height + boundingBox.origin.y
+                
+                return (x: pointX, y: pointY)
+            }
+            
+            DispatchQueue.main.async {
+                self.draw(points: faceLandmarkPoints)
+            }
+            
+        }
+    }
+    
+    func draw(points: [(x: CGFloat, y: CGFloat)]) {
+        let newLayer = CAShapeLayer()
+        newLayer.strokeColor = UIColor.red.cgColor
+        newLayer.lineWidth = 2.0
         
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: points[0].x, y: points[0].y))
+        for i in 0..<points.count - 1 {
+            let point = CGPoint(x: points[i].x, y: points[i].y)
+            path.addLine(to: point)
+            path.move(to: point)
+        }
+        path.addLine(to: CGPoint(x: points[0].x, y: points[0].y))
+        newLayer.path = path.cgPath
+        
+        shapeLayer.addSublayer(newLayer)
+    }
+    
+    func convert(_ points: [CGPoint], with count: Int) -> [(x: CGFloat, y: CGFloat)] {
+        var convertedPoints = [(x: CGFloat, y: CGFloat)]()
+        for i in 0..<count {
+            convertedPoints.append((CGFloat(points[i].x), CGFloat(points[i].y)))
+        }
+        
+        return convertedPoints
+    }
+    
+}
+
+extension CGRect {
+    func scaled(to size: CGSize) -> CGRect {
+        return CGRect(x: self.origin.x * size.width, y: self.origin.y * size.height, width: self.size.width * size.width, height: self.size.height * size.height)
     }
 }
+
 
