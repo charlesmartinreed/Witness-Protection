@@ -20,12 +20,12 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         let button = UIButton()
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setImage(#imageLiteral(resourceName: "Image"), for: .normal)
+        button.isHidden = true
         
         return button
     }()
-    let shapeLayer = CAShapeLayer()
-    var disguiseImageView = UIImageView()
     
+    let shapeLayer = CAShapeLayer()
     private var maskLayer = [CAShapeLayer]()
     
     //MARK:- Vision properties
@@ -65,6 +65,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         super.viewDidLayoutSubviews()
         previewLayer?.frame = videoPreviewView.frame
         shapeLayer.frame = videoPreviewView.frame
+        //previewLayer?.mask = shapeLayer.mask
+        previewLayer?.opacity = 0
         
     }
     
@@ -74,8 +76,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         videoPreviewView.layer.addSublayer(previewLayer)
         
-        shapeLayer.strokeColor = UIColor.red.cgColor
-        shapeLayer.lineWidth = 2.0
+        //shapeLayer.strokeColor = UIColor.red.cgColor
+        //shapeLayer.lineWidth = 2.0
         
         //coord system is flipped for Vision
         shapeLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: -1))
@@ -228,8 +230,8 @@ extension ViewController {
     
     func draw(points: [(x: CGFloat, y: CGFloat)]) {
         let newLayer = CAShapeLayer()
-        newLayer.strokeColor = UIColor.red.cgColor
-        newLayer.lineWidth = 2.0
+        newLayer.strokeColor = UIColor.black.cgColor
+        newLayer.lineWidth = 3.0
         
         let path = UIBezierPath()
         path.move(to: CGPoint(x: points[0].x, y: points[0].y))
@@ -244,49 +246,52 @@ extension ViewController {
         newLayer.path = path.cgPath
         
         shapeLayer.addSublayer(newLayer)
+        
+        
+        //can I change the background color?
     }
     
-    func placeImageAt(points: [(x: CGFloat, y: CGFloat)]) {
-        let imageView = UIImageView()
-        
-        for point in points {
-            imageView.frame = CGRect(x: point.x, y: point.y, width: 50, height: 50)
-            imageView.image = #imageLiteral(resourceName: "Image")
-            imageView.contentMode = .scaleAspectFit
-        }
-    
-        videoPreviewView.addSubview(imageView)
-    }
-    
-    fileprivate func drawFaceboundingBox(face: VNFaceObservation) {
-        /* The coordinates are normalized to the dimensions of the processed image,
-        with the origin at the image's lower-left corner.*/
-        
-        let transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -videoPreviewView.frame.height)
-        let scale = CGAffineTransform.identity.scaledBy(x: videoPreviewView.frame.width, y: videoPreviewView.frame.height)
-        let faceBounds = face.boundingBox.applying(scale).applying(transform)
-        
-        //now, create the layer
-        _ = createImage(in: faceBounds)
-    }
-    
-    fileprivate func createImage(in rect: CGRect) -> UIImageView {
-        disguiseImageView = UIImageView()
-        disguiseImageView.frame = rect
-        disguiseImageView.image = #imageLiteral(resourceName: "Image")
-        disguiseImageView.contentMode = .scaleAspectFit
-        videoPreviewView.addSubview(disguiseImageView)
-        
-        //mask.cornerRadius = 10
-        //mask.opacity = 0.75
-        //mask.borderColor = UIColor.yellow.cgColor
-        //mask.borderWidth = 2.0
-        
-        //maskLayer.append(mask)
-        //previewLayer?.insertSublayer(mask, at: 1)
-        
-        return disguiseImageView
-    }
+//    func placeImageAt(points: [(x: CGFloat, y: CGFloat)]) {
+//        let imageView = UIImageView()
+//
+//        for point in points {
+//            imageView.frame = CGRect(x: point.x, y: point.y, width: 50, height: 50)
+//            imageView.image = #imageLiteral(resourceName: "Image")
+//            imageView.contentMode = .scaleAspectFit
+//        }
+//
+//        videoPreviewView.addSubview(imageView)
+//    }
+//
+//    fileprivate func drawFaceboundingBox(face: VNFaceObservation) {
+//        /* The coordinates are normalized to the dimensions of the processed image,
+//        with the origin at the image's lower-left corner.*/
+//
+//        let transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -videoPreviewView.frame.height)
+//        let scale = CGAffineTransform.identity.scaledBy(x: videoPreviewView.frame.width, y: videoPreviewView.frame.height)
+//        let faceBounds = face.boundingBox.applying(scale).applying(transform)
+//
+//        //now, create the layer
+//        _ = createImage(in: faceBounds)
+//    }
+//
+//    fileprivate func createImage(in rect: CGRect) -> UIImageView {
+//        disguiseImageView = UIImageView()
+//        disguiseImageView.frame = rect
+//        disguiseImageView.image = #imageLiteral(resourceName: "Image")
+//        disguiseImageView.contentMode = .scaleAspectFit
+//        videoPreviewView.addSubview(disguiseImageView)
+//
+//        //mask.cornerRadius = 10
+//        //mask.opacity = 0.75
+//        //mask.borderColor = UIColor.yellow.cgColor
+//        //mask.borderWidth = 2.0
+//
+//        //maskLayer.append(mask)
+//        //previewLayer?.insertSublayer(mask, at: 1)
+//
+//        return disguiseImageView
+//    }
     
     
     func convert(_ points: [CGPoint], with count: Int) -> [(x: CGFloat, y: CGFloat)] {
