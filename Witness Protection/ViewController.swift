@@ -52,6 +52,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     let faceLandmarksDetectionRequest = VNSequenceRequestHandler()
     let faceDetectionSequenceRequest = VNSequenceRequestHandler()
     var boundingBoxExists = false
+    
+    var frontCameraIsActive = true
 
     //MARK:- AVKit properties
     var session: AVCaptureSession?
@@ -99,7 +101,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         previewLayer?.frame = videoPreviewView.frame
         shapeLayer.frame = videoPreviewView.frame
         //previewLayer?.mask = shapeLayer.mask
-        previewLayer?.opacity = 1
+        previewLayer?.opacity = 0
         
     }
     
@@ -163,10 +165,22 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
     
     @objc fileprivate func flipCameraButtonTapped() {
+        frontCameraIsActive.toggle()
         switchCamera()
     }
     
     fileprivate func switchCamera() {
+//        var faceSubylayer: CAShapeLayer!
+//
+//        for sublayer in shapeLayer.sublayers! where sublayer is CAShapeLayer {
+//            if let faceLayer = sublayer as? CAShapeLayer {
+//                faceSubylayer = faceLayer
+//                faceLayer.removeFromSuperlayer()
+//                print("facelayer removed")
+//            }
+//
+//        }
+        
         if let session = session {
             session.beginConfiguration()
             
@@ -200,6 +214,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             }
             
             session.commitConfiguration()
+            
+            //shapeLayer.insertSublayer(faceSubylayer, at: 0)
         }
     }
     
@@ -294,8 +310,15 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         let ciImage = CIImage(cvImageBuffer: pixelBuffer!, options: attachments as! [CIImageOption : Any]?)
         
         //leftMirrored for front cam
-        let ciImageWithOrientation = ciImage.oriented(forExifOrientation: Int32(UIImage.Orientation.leftMirrored.rawValue))
-        detectFace(on: ciImageWithOrientation)
+        if frontCameraIsActive {
+            let ciImageWithOrientation = ciImage.oriented(forExifOrientation: Int32(UIImage.Orientation.leftMirrored.rawValue))
+            detectFace(on: ciImageWithOrientation)
+        } else if !frontCameraIsActive {
+            //SEE: https://github.com/Willjay90/AppleFaceDetection/blob/master/VisionDetection/ViewController.swift
+            let ciImageWithOrientation = ciImage.oriented(forExifOrientation: Int32(5))
+            detectFace(on: ciImageWithOrientation)
+        }
+       
        
     }
     
@@ -390,8 +413,11 @@ extension ViewController {
     }
     
     func draw(points: [(x: CGFloat, y: CGFloat)]) {
+        let colors: [UIColor] = [UIColor.purple, UIColor.orange, UIColor.black, UIColor.blue, UIColor.yellow, UIColor.brown, UIColor.green, UIColor.lightGray]
+        let randomColor = Int.random(in: 0..<colors.count)
+        
         let newLayer = CAShapeLayer()
-        newLayer.strokeColor = UIColor.black.cgColor
+        newLayer.strokeColor = colors[randomColor].cgColor
         newLayer.lineWidth = 3.0
         
         let path = UIBezierPath()
