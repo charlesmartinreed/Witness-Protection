@@ -11,7 +11,8 @@ import UIKit
 import AVKit
 import Vision
 
-class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
+class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureFileOutputRecordingDelegate {
+    
     
     @IBOutlet weak var videoPreviewView: UIView!
     
@@ -20,7 +21,6 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         let button = UIButton()
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setImage(#imageLiteral(resourceName: "Image"), for: .normal)
-        button.isHidden = true
         
         return button
     }()
@@ -32,6 +32,15 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         button.layer.cornerRadius = 25
         
         button.addTarget(self, action: #selector(recordButtonTapped), for: .touchUpInside)
+        return button
+    }()
+    
+    lazy var flipCameraIcon: UIButton = {
+        let button = UIButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setImage(#imageLiteral(resourceName: "flipCameraIcon"), for: .normal)
+        
+        button.addTarget(self, action: #selector(flipCameraButtonTapped), for: .touchUpInside)
         return button
     }()
     
@@ -56,6 +65,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         }
     }
     
+    var videoFileOutput = AVCaptureMovieFileOutput()
+    
     private lazy var previewLayer: AVCaptureVideoPreviewLayer? = {
         guard let session = self.session else { return nil }
         
@@ -67,6 +78,10 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     var frontCamera: AVCaptureDevice? = {
         return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+    }()
+    
+    var microphone: AVCaptureDevice? = {
+       return AVCaptureDevice.default(for: .audio)
     }()
     
     override func viewDidLoad() {
@@ -84,7 +99,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         previewLayer?.frame = videoPreviewView.frame
         shapeLayer.frame = videoPreviewView.frame
         //previewLayer?.mask = shapeLayer.mask
-        previewLayer?.opacity = 0
+        previewLayer?.opacity = 1
         
     }
     
@@ -104,8 +119,9 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
     
     fileprivate func setupUI() {
-        view.addSubview(trackingButton)
-        view.addSubview(recordButton)
+//        view.addSubview(trackingButton)
+//        view.addSubview(recordButton)
+        view.addSubview(flipCameraIcon)
         
         let trackingButtonConstraints: [NSLayoutConstraint] = [
             trackingButton.widthAnchor.constraint(equalToConstant: 150),
@@ -114,15 +130,24 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             trackingButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 16)
         ]
         
-        let recordButtonConstriants: [NSLayoutConstraint] = [
+        let recordButtonConstraints: [NSLayoutConstraint] = [
             recordButton.widthAnchor.constraint(equalToConstant: 50),
             recordButton.heightAnchor.constraint(equalToConstant: 50),
             recordButton.topAnchor.constraint(equalTo: videoPreviewView.safeAreaLayoutGuide.topAnchor, constant: 16),
             recordButton.trailingAnchor.constraint(equalTo: videoPreviewView.safeAreaLayoutGuide.trailingAnchor, constant: -16)
         ]
         
-        NSLayoutConstraint.activate(trackingButtonConstraints)
-        NSLayoutConstraint.activate(recordButtonConstriants)
+        let flipCameraButtonConstraints: [NSLayoutConstraint] = [
+            flipCameraIcon.widthAnchor.constraint(equalToConstant: 70),
+            flipCameraIcon.heightAnchor.constraint(equalToConstant: 70),
+            flipCameraIcon.topAnchor.constraint(equalTo: videoPreviewView.safeAreaLayoutGuide.topAnchor, constant: 16),
+            flipCameraIcon.leadingAnchor.constraint(equalTo: videoPreviewView.safeAreaLayoutGuide.leadingAnchor, constant: 16)
+        ]
+        
+        let uiConstraints = [flipCameraButtonConstraints]
+        uiConstraints.forEach { (constraint) in
+            NSLayoutConstraint.activate(constraint)
+        }
         
     }
     
@@ -135,8 +160,52 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         } else {
             finishVideoRecording()
         }
-        
-        
+    }
+    
+    @objc fileprivate func flipCameraButtonTapped() {
+        switchCamera()
+    }
+    
+    fileprivate func switchCamera() {
+        if let session = session {
+            session.beginConfiguration()
+            
+            //get rid of old input
+            guard let currentCameraInput = session.inputs.first else { return }
+            
+            //setup new input
+            var newCamera: AVCaptureDevice! = nil
+            if let input = currentCameraInput as? AVCaptureDeviceInput {
+                if input.device.position == .front {
+                    newCamera = cameraWithPosition(position: .back)
+                } else {
+                    newCamera = cameraWithPosition(position: .front)
+                }
+            }
+            
+            var newVideoInput: AVCaptureDeviceInput!
+            do {
+                newVideoInput = try AVCaptureDeviceInput(device: newCamera)
+            } catch let error as NSError {
+                NSLog("Error adding input: %@", error.localizedDescription)
+                newVideoInput = nil
+            }
+            
+            for input in session.inputs where input is AVCaptureDeviceInput {
+                session.removeInput(input)
+            }
+            
+            if newVideoInput != nil {
+                session.addInput(newVideoInput)
+            }
+            
+            session.commitConfiguration()
+        }
+    }
+    
+    fileprivate func cameraWithPosition(position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .unspecified).devices
+        return devices.filter { $0.position == position }.first ?? nil
     }
     
     fileprivate func animateRecordButton() {
@@ -158,7 +227,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     //MARK:- Recording video
     fileprivate func beginVideoRecording() {
-        
+        //don't forget recordingDelegate: self as AVCaptureFireOutputRecordingDelegate
     }
     
     fileprivate func finishVideoRecording() {
@@ -168,15 +237,36 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     //MARK:- Add input/output devices to capture session
     fileprivate func prepareSession() {
         session = AVCaptureSession()
-        guard let session = session, let captureDevice = frontCamera else { return }
+        guard let session = session,
+            let captureDevice = frontCamera else { return }
         
         do {
-            let deviceInput = try AVCaptureDeviceInput(device: captureDevice)
+            let visualInput = try AVCaptureDeviceInput(device: captureDevice)
+            //let auralInput = try AVCaptureDeviceInput(device: audioDevice)
             session.beginConfiguration()
             
-            if session.canAddInput(deviceInput) {
-                session.addInput(deviceInput)
+            if session.canAddInput(visualInput) {
+                print("visual input added")
+                session.addInput(visualInput)
             }
+            
+//            if session.canAddInput(auralInput) {
+//                print("aural input added")
+//                session.addInput(auralInput)
+//            }
+            
+            //MARK:- Video recording settings
+            let totalSeconds: Float64 = 600
+            let preferredTimeScale: Int32 = 24 //fps
+            
+            let maxDuration = CMTimeMakeWithSeconds(totalSeconds, preferredTimescale: preferredTimeScale)
+            videoFileOutput.maxRecordedDuration = maxDuration
+            videoFileOutput.minFreeDiskSpaceLimit = 1024*1024*1000 //1 GB
+            
+            let connection = videoFileOutput.connection(with: .video)
+            videoFileOutput.connection(with: .video)
+            connection?.preferredVideoStabilizationMode = .auto
+            connection?.videoOrientation = .portrait
             
             let output = AVCaptureVideoDataOutput()
             output.videoSettings = [String(kCVPixelBufferPixelFormatTypeKey) : Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)]
@@ -196,7 +286,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     }
 
     
-    //MARK:- sample buffer delegte methods
+    //MARK:- delegte methods
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         
         let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
@@ -208,6 +298,16 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         detectFace(on: ciImageWithOrientation)
        
     }
+    
+    func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
+        
+    }
+    
+    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
+        
+    }
+
+    
 
 }
 
